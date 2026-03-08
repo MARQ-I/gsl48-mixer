@@ -1,4 +1,4 @@
-const PASSWORD = "slu2026";  function calcSimilarity(a, b) {   if (!a || !b) return 0;   const w1 = new Set(a.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   const w2 = new Set(b.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   let n = 0; w1.forEach(w=>{if(w2.has(w))n++;});   return n / Math.max(w1.size, w2.size, 1); }
+  function calcSimilarity(a, b) {   if (!a || !b) return 0;   const w1 = new Set(a.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   const w2 = new Set(b.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   let n = 0; w1.forEach(w=>{if(w2.has(w))n++;});   return n / Math.max(w1.size, w2.size, 1); }
 
 function PasswordGate({ children }) {
   const [input, setInput] = useState("");
@@ -820,7 +820,7 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
 }
 
 // ===================== MAIN APP =====================
-function SyllabusMixer() {
+export default function SyllabusMixer() {
   const [step, setStep] = useState(1); // 1 | 2 | 3
   const [diagResult, setDiagResult] = useState(null);
   const [importedModules, setImportedModules] = useState([]);
