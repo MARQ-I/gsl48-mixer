@@ -495,7 +495,7 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
       const m=all[i], stype=m._session_type||"credit2";
       setProgress({done:i,total:all.length,current:m.course_name_ja});
       try{
-        const s=await generateOneSyllabus(m,stype);
+        const similar=importedModules.find(im=>calcSimilarity((im.course_name_ja||"")+(im.description||""),( m.course_name_ja||"")+(m.description||""))>0.3);         const s=similar?{course_objectives:[similar.description||"大学シラバスより"],teaching_method:similar.course_name_ja||"",sessions:[{num:1,title:similar.course_name_ja||"",content:similar.description||""}],assessment:"大学シラバス準拠",_source:"university"}:await generateOneSyllabus(m,stype);
         results[m.module_id]={...s,_session_type:stype,_module:m};
         log(`✅ 生成: ${m.module_id} ${m.course_name_ja}`);
       }catch(e){
