@@ -1,31 +1,4 @@
-  function calcSimilarity(a, b) {   if (!a || !b) return 0;   const w1 = new Set(a.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   const w2 = new Set(b.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   let n = 0; w1.forEach(w=>{if(w2.has(w))n++;});   return n / Math.max(w1.size, w2.size, 1); }
-
-function PasswordGate({ children }) {
-  const [input, setInput] = useState("");
-  const [auth, setAuth] = useState(false);
-  const [error, setError] = useState(false);
-  if (auth) return children;
-  return (
-    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
-      <div style={{background:"white",borderRadius:16,padding:48,boxShadow:"0 4px 32px #0001",minWidth:320,textAlign:"center"}}>
-        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
-        <div style={{fontSize:22,fontWeight:"bold",marginBottom:8,color:"#1e293b"}}>GSL48 シラバス構築ツール</div>
-        <div style={{fontSize:14,color:"#64748b",marginBottom:24}}>パスワードを入力してください</div>
-        <input type="password" value={input}
-          onChange={e=>{setInput(e.target.value);setError(false);}}
-          onKeyDown={e=>{if(e.key==="Enter"){if(input===PASSWORD)setAuth(true);else{setError(true);setInput("");}}}}
-          placeholder="パスワード"
-          style={{width:"100%",padding:"10px 14px",borderRadius:8,fontSize:16,border:error?"2px solid #ef4444":"2px solid #e2e8f0",outline:"none",marginBottom:12,boxSizing:"border-box"}}
-          autoFocus />
-        {error&&<div style={{color:"#ef4444",fontSize:13,marginBottom:12}}>パスワードが違います</div>}
-        <button onClick={()=>{if(input===PASSWORD)setAuth(true);else{setError(true);setInput("");}}}
-          style={{width:"100%",padding:12,borderRadius:8,fontSize:16,fontWeight:"bold",background:"#7c3aed",color:"white",border:"none",cursor:"pointer"}}>
-          ログイン
-        </button>
-      </div>
-    </div>
-  );
-}const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 import { useState, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 
@@ -97,7 +70,7 @@ ${fmtInstr}
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:2000, messages:[{role:"user",content:prompt}]})
+    body: JSON.stringify({model:"claude-sonnet-4-20250514", max_tokens:2000, messages:[{role:"user",content:prompt}]})
   });
   const data = await res.json();
   const text = data.content?.map(c=>c.text||"").join("") || "{}";
@@ -358,7 +331,7 @@ function Step2Import({importedModules, setImportedModules, onComplete, log}) {
     const b64 = await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("読込失敗"));r.readAsDataURL(file);});
     const mt = ext==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:4000,messages:[{role:"user",content:[
+      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:[
         {type:"document",source:{type:"base64",media_type:mt,data:b64}},
         {type:"text",text:`このシラバスから全科目をJSON配列のみで抽出してください:\n[{"module_id":"","layer_id":"X","course_name_ja":"","module_name":"","recommended_year":1,"default_credits":2,"requirement":"","description":"","related_subjects":"","tags":""}]`}
       ]}]})});
@@ -495,7 +468,7 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
       const m=all[i], stype=m._session_type||"credit2";
       setProgress({done:i,total:all.length,current:m.course_name_ja});
       try{
-        const similar=importedModules.find(im=>calcSimilarity((im.course_name_ja||"")+(im.description||""),( m.course_name_ja||"")+(m.description||""))>0.3);         const s=similar?{course_objectives:[similar.description||"大学シラバスより"],teaching_method:similar.course_name_ja||"",sessions:[{num:1,title:similar.course_name_ja||"",content:similar.description||""}],assessment:"大学シラバス準拠",_source:"university"}:await generateOneSyllabus(m,stype);
+        const s=await generateOneSyllabus(m,stype);
         results[m.module_id]={...s,_session_type:stype,_module:m};
         log(`✅ 生成: ${m.module_id} ${m.course_name_ja}`);
       }catch(e){
@@ -923,7 +896,4 @@ export default function SyllabusMixer() {
       </div>
     </div>
   );
-}
-export default function Root() {
-  return <PasswordGate><App /></PasswordGate>;
 }
