@@ -47,6 +47,26 @@ const RC = {
 };
 const genId = () => "X"+Math.random().toString(36).slice(2,6).toUpperCase();
 
+// ===================== SIMILARITY UTILS =====================
+function calcSimilarity(a, b) {
+  if (!a || !b) return 0;
+  const words = s => new Set(s.toLowerCase().replace(/[^\w\u3040-\u9fff]/g," ").split(/\s+/).filter(w=>w.length>1));
+  const w1=words(a), w2=words(b);
+  let n=0; w1.forEach(w=>{if(w2.has(w))n++;});
+  return n / Math.max(w1.size, w2.size, 1);
+}
+function findSimilarUniversityCourse(gslModule, importedModules) {
+  if(!importedModules||importedModules.length===0) return null;
+  let best=null, bestScore=0;
+  for(const im of importedModules){
+    const gslText=(gslModule.course_name_ja||"")+" "+(gslModule.description||"");
+    const uniText=(im.course_name_ja||im.name||"")+" "+(im.description||im.summary||"");
+    const score=calcSimilarity(gslText, uniText);
+    if(score>bestScore){bestScore=score;best=im;}
+  }
+  return bestScore>0.25?best:null;
+}
+
 // ===================== AI SYLLABUS GENERATOR =====================
 async function generateOneSyllabus(module, sessionType) {
   const st = SESSION_TYPES.find(x => x.id === sessionType);
@@ -70,7 +90,7 @@ ${fmtInstr}
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body: JSON.stringify({model:"claude-sonnet-4-20250514", max_tokens:2000, messages:[{role:"user",content:prompt}]})
+    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:2000, messages:[{role:"user",content:prompt}]})
   });
   const data = await res.json();
   const text = data.content?.map(c=>c.text||"").join("") || "{}";
@@ -468,9 +488,24 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
       const m=all[i], stype=m._session_type||"credit2";
       setProgress({done:i,total:all.length,current:m.course_name_ja});
       try{
-        const s=await generateOneSyllabus(m,stype);
+        const uniMatch=findSimilarUniversityCourse(m, importedModules);
+        let s;
+        if(uniMatch){
+          s={
+            course_objectives:[uniMatch.description||uniMatch.summary||"大学シラバスより"],
+            teaching_method:uniMatch.teaching_method||uniMatch.course_name_ja||m.course_name_ja,
+            sessions:(uniMatch.sessions||[{num:1,title:uniMatch.course_name_ja||m.course_name_ja,content:uniMatch.description||"大学シラバス準拠",method:"講義"}]),
+            assessment:uniMatch.assessment||"大学シラバス準拠",
+            materials:uniMatch.materials||[],
+            keywords:uniMatch.keywords||[],
+            _source:"university"
+          };
+          log(`🏫 大学優先: ${m.module_id} ${m.course_name_ja}`);
+        } else {
+          s=await generateOneSyllabus(m,stype);
+          log(`✅ 生成: ${m.module_id} ${m.course_name_ja}`);
+        }
         results[m.module_id]={...s,_session_type:stype,_module:m};
-        log(`✅ 生成: ${m.module_id} ${m.course_name_ja}`);
       }catch(e){
         results[m.module_id]={_error:e.message,_session_type:stype,_module:m};
         log(`⚠️ 失敗: ${m.module_id}`);
