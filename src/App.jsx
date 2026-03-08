@@ -77,11 +77,11 @@ function findSimilarUniversityCourse(gslModule, importedModules) {
 // ===================== AI SYLLABUS GENERATOR =====================
 async function generateOneSyllabus(module, sessionType) {
   const maxN = sessionType === "short" ? 4 : sessionType === "credit1" ? 8 : 16;
-  const prompt = `JSONのみ返せ。科目:${module.course_name_ja}/${module.description} 授業${maxN}回\n{"course_objectives":["目標1","目標2"],"teaching_method":"形態","sessions":[{"num":1,"title":"T","content":"C","method":"講義"}],"assessment":"評価","keywords":["KW1"]}`;
+  const prompt = `JSONのみ返せ。余分な文字不要。\n科目名:${module.course_name_ja}\n概要:${module.description}\n授業回数:必ず${maxN}回\n形式:{"course_objectives":["目標1","目標2"],"teaching_method":"形態","sessions":[{"num":1,"title":"回タイトル","content":"内容30字","method":"講義"}],"assessment":"評価","keywords":["KW1","KW2"]}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:700, messages:[{role:"user",content:prompt}]})
+    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens: sessionType==="short"?400:sessionType==="credit1"?900:1500, messages:[{role:"user",content:prompt}]})
   });
   const data = await res.json();
   const text = data.content?.map(c=>c.text||"").join("") || "{}";
@@ -535,9 +535,11 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
       const rows=[["科目ID","ソース","科目名","学習目標","授業方法","各回タイトル","評価方法","教材","キーワード"]];
       mods.forEach(m=>{
         const s=generatedSyllabi[m.module_id];
-        if(!s||s._error){rows.push([m.module_id,m._src||"gsl",m.course_name_ja,"（生成未完了）","","","","",""]);return;}
+        // 生成済み・エラーなし・sessionsあり の科目のみ出力
+        if(!s||s._error||!s.sessions||s.sessions.length===0) return;
         rows.push([m.module_id,m._src||"gsl",m.course_name_ja,(s.course_objectives||[]).join("／"),s.teaching_method||"",(s.sessions||[]).map((ss,i)=>`${ss.num||i+1}.${ss.title}`).join("\n"),s.assessment||"",(s.materials||[]).join("、"),(s.keywords||[]).join("、")]);
       });
+      if(rows.length===1) return; // ヘッダーのみなら追加しない
       XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(rows),`${st.label}(${st.sub})`);
     });
     const dc=[["科目ID","ソース","科目名","形式","回","タイトル","内容","形態"]];
