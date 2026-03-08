@@ -1,4 +1,31 @@
-const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
+const PASSWORD = "slu2026";
+
+function PasswordGate({ children }) {
+  const [input, setInput] = React.useState("");
+  const [auth, setAuth] = React.useState(false);
+  const [error, setError] = React.useState(false);
+  if (auth) return children;
+  return (
+    <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
+      <div style={{background:"white",borderRadius:16,padding:48,boxShadow:"0 4px 32px #0001",minWidth:320,textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+        <div style={{fontSize:22,fontWeight:"bold",marginBottom:8,color:"#1e293b"}}>GSL48 シラバス構築ツール</div>
+        <div style={{fontSize:14,color:"#64748b",marginBottom:24}}>パスワードを入力してください</div>
+        <input type="password" value={input}
+          onChange={e=>{setInput(e.target.value);setError(false);}}
+          onKeyDown={e=>{if(e.key==="Enter"){if(input===PASSWORD)setAuth(true);else{setError(true);setInput("");}}}}
+          placeholder="パスワード"
+          style={{width:"100%",padding:"10px 14px",borderRadius:8,fontSize:16,border:error?"2px solid #ef4444":"2px solid #e2e8f0",outline:"none",marginBottom:12,boxSizing:"border-box"}}
+          autoFocus />
+        {error&&<div style={{color:"#ef4444",fontSize:13,marginBottom:12}}>パスワードが違います</div>}
+        <button onClick={()=>{if(input===PASSWORD)setAuth(true);else{setError(true);setInput("");}}}
+          style={{width:"100%",padding:12,borderRadius:8,fontSize:16,fontWeight:"bold",background:"#7c3aed",color:"white",border:"none",cursor:"pointer"}}>
+          ログイン
+        </button>
+      </div>
+    </div>
+  );
+}const ANTHROPIC_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 import { useState, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
 
@@ -896,4 +923,7 @@ export default function SyllabusMixer() {
       </div>
     </div>
   );
+}
+export default function Root() {
+  return <PasswordGate><App /></PasswordGate>;
 }
