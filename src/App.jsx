@@ -76,28 +76,12 @@ function findSimilarUniversityCourse(gslModule, importedModules) {
 
 // ===================== AI SYLLABUS GENERATOR =====================
 async function generateOneSyllabus(module, sessionType) {
-  const st = SESSION_TYPES.find(x => x.id === sessionType);
-  const creditLabel = st.credits > 0 ? `${st.credits}単位` : "単位なし（課外・体験型）";
-  let fmtInstr = "";
-  if (sessionType === "short") {
-    fmtInstr = `授業型（全2〜6回想定、単位なし）として体験・認知拡大目的の構成にしてください。sessionsは2〜6件で作成してください。assessmentは「なし（参加・出席のみ）」にしてください。`;
-  } else if (sessionType === "credit1") {
-    fmtInstr = `1単位科目として基礎リテラシー習得目的の構成にしてください。sessionsは必ず8件（第1回〜第8回）のみ作成してください。8件を超えないでください。`;
-  } else {
-    fmtInstr = `2単位科目として体系的・実践的な学修目的の構成にしてください。sessionsは必ず16件（第1回〜第16回）のみ作成してください。16件を超えないでください。前半8回でインプット、後半8回でアウトプット・実践を組み立ててください。`;
-  }
-  const prompt = `あなたは大学シラバス設計の専門家です。以下のGSL48モジュールについて詳細シラバスをJSONのみで返してください。
-
-【モジュール】科目ID:${module.module_id} / 科目名:${module.course_name_ja} / 概要:${module.description} / 推奨学年:${module.recommended_year}年生
-【授業形式】${st.label}(${st.sub}) / ${creditLabel}
-${fmtInstr}
-
-以下のJSON形式のみで返答（説明文・マークダウン不要）:
-{"course_objectives":["目標1","目標2","目標3"],"teaching_method":"授業形態の説明","sessions":[{"num":1,"title":"第1回タイトル","content":"授業内容（80字程度）","method":"講義/演習/ワーク/フィールド"}],"assessment":"評価方法","materials":["教材1","教材2"],"keywords":["KW1","KW2","KW3"]}`;
+  const maxN = sessionType === "short" ? 4 : sessionType === "credit1" ? 8 : 16;
+  const prompt = `JSONのみ返せ。科目:${module.course_name_ja}/${module.description} 授業${maxN}回\n{"course_objectives":["目標1","目標2"],"teaching_method":"形態","sessions":[{"num":1,"title":"T","content":"C","method":"講義"}],"assessment":"評価","keywords":["KW1"]}`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:2000, messages:[{role:"user",content:prompt}]})
+    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:700, messages:[{role:"user",content:prompt}]})
   });
   const data = await res.json();
   const text = data.content?.map(c=>c.text||"").join("") || "{}";
@@ -495,59 +479,48 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
   const startGenerate = async () => {
     setGenState("generating");
     const all = [...mixModules];
-    setProgress({done:0, total:all.length, current:""});
-    const results = {};
+    setProgress({done:0, total:all.length, current:"並列生成中..."});
     let uniCount = 0, aiCount = 0;
 
-    for (let i = 0; i < all.length; i++) {
-      const m = all[i];
+    // ── 全科目を並列処理（逐次→並列で約10倍速） ──
+    const tasks = all.map(async (m) => {
       const stype = m._session_type || "credit2";
-      // 回数上限: 2単位=16回、1単位=8回、体験=6回
-      const maxSessions = stype === "short" ? 6 : stype === "credit1" ? 8 : 16;
-      setProgress({done:i, total:all.length, current:m.course_name_ja});
-
-      // ① 大学シラバスとの類似度チェック
+      const maxSessions = stype === "short" ? 4 : stype === "credit1" ? 8 : 16;
       const sim = findSimilarUniversityCourse(m, importedModules);
-
       try {
         if (sim) {
-          // ── 25%以上一致 → 大学シラバスを採用、AI生成スキップ ──
+          // 25%以上一致 → 大学シラバス採用・AI生成スキップ
           const im = sim.match;
           const uniSessions = (im.sessions || []).slice(0, maxSessions);
-          // sessionsが空なら1行だけ作る
           const sessions = uniSessions.length > 0
             ? uniSessions
             : [{num:1, title: im.course_name_ja || m.course_name_ja, content: im.description || "大学シラバス準拠", method:"講義"}];
-          results[m.module_id] = {
-            course_objectives: im.course_objectives || [im.description || im.summary || "大学シラバスより"],
-            teaching_method:   im.teaching_method  || "大学シラバス準拠",
-            sessions,
-            assessment:        im.assessment || "大学シラバス準拠",
-            materials:         im.materials  || [],
-            keywords:          im.keywords   || [],
-            _source:           "university",
-            _similarity:       Math.round(sim.score * 100),
-            _session_type:     stype,
-            _module:           m
-          };
           uniCount++;
           log(`🏫 大学優先(${Math.round(sim.score*100)}%): ${m.module_id} ${m.course_name_ja}`);
+          return [m.module_id, {
+            course_objectives: im.course_objectives || [im.description || "大学シラバスより"],
+            teaching_method: im.teaching_method || "大学シラバス準拠",
+            sessions, assessment: im.assessment || "大学シラバス準拠",
+            materials: im.materials || [], keywords: im.keywords || [],
+            _source:"university", _similarity:Math.round(sim.score*100), _session_type:stype, _module:m
+          }];
         } else {
-          // ── 25%未満 → GSL48としてAI生成（回数上限を厳守） ──
+          // 25%未満 → AI生成
           const s = await generateOneSyllabus(m, stype);
-          // 念のためフロントでも切る
           if (s.sessions) s.sessions = s.sessions.slice(0, maxSessions);
-          results[m.module_id] = {...s, _source:"ai", _session_type:stype, _module:m};
           aiCount++;
-          log(`✅ AI生成(${maxSessions}回): ${m.module_id} ${m.course_name_ja}`);
+          log(`✅ AI生成: ${m.module_id} ${m.course_name_ja}`);
+          return [m.module_id, {...s, _source:"ai", _session_type:stype, _module:m}];
         }
       } catch(e) {
-        results[m.module_id] = {_error:e.message, _session_type:stype, _module:m};
         log(`⚠️ 失敗: ${m.module_id} ${e.message}`);
+        return [m.module_id, {_error:e.message, _session_type:stype, _module:m}];
       }
+    });
 
-      if (i < all.length - 1) await new Promise(r => setTimeout(r, 200));
-    }
+    const settled = await Promise.allSettled(tasks);
+    const results = {};
+    settled.forEach(r => { if (r.status === "fulfilled") { const [id, data] = r.value; results[id] = data; } });
 
     setGeneratedSyllabi(results);
     setProgress({done:all.length, total:all.length, current:"完了"});
