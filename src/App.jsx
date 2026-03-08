@@ -50,21 +50,28 @@ const genId = () => "X"+Math.random().toString(36).slice(2,6).toUpperCase();
 // ===================== SIMILARITY UTILS =====================
 function calcSimilarity(a, b) {
   if (!a || !b) return 0;
-  const words = s => new Set(s.toLowerCase().replace(/[^\w\u3040-\u9fff]/g," ").split(/\s+/).filter(w=>w.length>1));
-  const w1=words(a), w2=words(b);
-  let n=0; w1.forEach(w=>{if(w2.has(w))n++;});
+  const words = s => new Set(
+    s.toLowerCase()
+     .replace(/[^\w\u3040-\u9fff]/g, " ")
+     .split(/\s+/)
+     .filter(w => w.length > 1)
+  );
+  const w1 = words(a), w2 = words(b);
+  let n = 0; w1.forEach(w => { if (w2.has(w)) n++; });
   return n / Math.max(w1.size, w2.size, 1);
 }
+
 function findSimilarUniversityCourse(gslModule, importedModules) {
-  if(!importedModules||importedModules.length===0) return null;
-  let best=null, bestScore=0;
-  for(const im of importedModules){
-    const gslText=(gslModule.course_name_ja||"")+" "+(gslModule.description||"");
-    const uniText=(im.course_name_ja||im.name||"")+" "+(im.description||im.summary||"");
-    const score=calcSimilarity(gslText, uniText);
-    if(score>bestScore){bestScore=score;best=im;}
+  if (!importedModules || importedModules.length === 0) return null;
+  let best = null, bestScore = 0;
+  const gslText = (gslModule.course_name_ja || "") + " " + (gslModule.description || "");
+  for (const im of importedModules) {
+    const uniText = (im.course_name_ja || im.name || "") + " " + (im.description || im.summary || "");
+    const score = calcSimilarity(gslText, uniText);
+    if (score > bestScore) { bestScore = score; best = im; }
   }
-  return bestScore>0.25?best:null;
+  // 25%以上一致 → 大学シラバスを優先（AI生成スキップ）
+  return bestScore >= 0.25 ? { match: best, score: bestScore } : null;
 }
 
 // ===================== AI SYLLABUS GENERATOR =====================
@@ -75,9 +82,9 @@ async function generateOneSyllabus(module, sessionType) {
   if (sessionType === "short") {
     fmtInstr = `授業型（全2〜6回想定、単位なし）として体験・認知拡大目的の構成にしてください。sessionsは2〜6件で作成してください。assessmentは「なし（参加・出席のみ）」にしてください。`;
   } else if (sessionType === "credit1") {
-    fmtInstr = `1単位科目（全8回）として基礎リテラシー習得目的の構成にしてください。sessionsは必ず8件作成してください。`;
+    fmtInstr = `1単位科目として基礎リテラシー習得目的の構成にしてください。sessionsは必ず8件（第1回〜第8回）のみ作成してください。8件を超えないでください。`;
   } else {
-    fmtInstr = `2単位科目（全16回）として体系的・実践的な学修目的の構成にしてください。sessionsは必ず16件作成してください。前半8回でインプット、後半8回でアウトプット・実践を組み立ててください。`;
+    fmtInstr = `2単位科目として体系的・実践的な学修目的の構成にしてください。sessionsは必ず16件（第1回〜第16回）のみ作成してください。16件を超えないでください。前半8回でインプット、後半8回でアウトプット・実践を組み立ててください。`;
   }
   const prompt = `あなたは大学シラバス設計の専門家です。以下のGSL48モジュールについて詳細シラバスをJSONのみで返してください。
 
@@ -99,7 +106,13 @@ ${fmtInstr}
   if (s===-1||e===-1) throw new Error("JSONが見つかりません");
   const jsonStr = cleaned.slice(s, e+1);
   try {
-    return JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
+    // セッション数の上限を強制適用
+    if (parsed.sessions) {
+      const maxSessions = sessionType === "short" ? 6 : sessionType === "credit1" ? 8 : 16;
+      parsed.sessions = parsed.sessions.slice(0, maxSessions);
+    }
+    return parsed;
   } catch(_) {
     const p = {};
     const om = jsonStr.match(/"course_objectives"\s*:\s*\[([\s\S]*?)\]/);
@@ -481,41 +494,65 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
 
   const startGenerate = async () => {
     setGenState("generating");
-    const all=[...mixModules];
-    setProgress({done:0,total:all.length,current:""});
-    const results={};
-    for(let i=0;i<all.length;i++){
-      const m=all[i], stype=m._session_type||"credit2";
-      setProgress({done:i,total:all.length,current:m.course_name_ja});
-      try{
-        const uniMatch=findSimilarUniversityCourse(m, importedModules);
-        let s;
-        if(uniMatch){
-          s={
-            course_objectives:[uniMatch.description||uniMatch.summary||"大学シラバスより"],
-            teaching_method:uniMatch.teaching_method||uniMatch.course_name_ja||m.course_name_ja,
-            sessions:(uniMatch.sessions||[{num:1,title:uniMatch.course_name_ja||m.course_name_ja,content:uniMatch.description||"大学シラバス準拠",method:"講義"}]),
-            assessment:uniMatch.assessment||"大学シラバス準拠",
-            materials:uniMatch.materials||[],
-            keywords:uniMatch.keywords||[],
-            _source:"university"
+    const all = [...mixModules];
+    setProgress({done:0, total:all.length, current:""});
+    const results = {};
+    let uniCount = 0, aiCount = 0;
+
+    for (let i = 0; i < all.length; i++) {
+      const m = all[i];
+      const stype = m._session_type || "credit2";
+      // 回数上限: 2単位=16回、1単位=8回、体験=6回
+      const maxSessions = stype === "short" ? 6 : stype === "credit1" ? 8 : 16;
+      setProgress({done:i, total:all.length, current:m.course_name_ja});
+
+      // ① 大学シラバスとの類似度チェック
+      const sim = findSimilarUniversityCourse(m, importedModules);
+
+      try {
+        if (sim) {
+          // ── 25%以上一致 → 大学シラバスを採用、AI生成スキップ ──
+          const im = sim.match;
+          const uniSessions = (im.sessions || []).slice(0, maxSessions);
+          // sessionsが空なら1行だけ作る
+          const sessions = uniSessions.length > 0
+            ? uniSessions
+            : [{num:1, title: im.course_name_ja || m.course_name_ja, content: im.description || "大学シラバス準拠", method:"講義"}];
+          results[m.module_id] = {
+            course_objectives: im.course_objectives || [im.description || im.summary || "大学シラバスより"],
+            teaching_method:   im.teaching_method  || "大学シラバス準拠",
+            sessions,
+            assessment:        im.assessment || "大学シラバス準拠",
+            materials:         im.materials  || [],
+            keywords:          im.keywords   || [],
+            _source:           "university",
+            _similarity:       Math.round(sim.score * 100),
+            _session_type:     stype,
+            _module:           m
           };
-          log(`🏫 大学優先: ${m.module_id} ${m.course_name_ja}`);
+          uniCount++;
+          log(`🏫 大学優先(${Math.round(sim.score*100)}%): ${m.module_id} ${m.course_name_ja}`);
         } else {
-          s=await generateOneSyllabus(m,stype);
-          log(`✅ 生成: ${m.module_id} ${m.course_name_ja}`);
+          // ── 25%未満 → GSL48としてAI生成（回数上限を厳守） ──
+          const s = await generateOneSyllabus(m, stype);
+          // 念のためフロントでも切る
+          if (s.sessions) s.sessions = s.sessions.slice(0, maxSessions);
+          results[m.module_id] = {...s, _source:"ai", _session_type:stype, _module:m};
+          aiCount++;
+          log(`✅ AI生成(${maxSessions}回): ${m.module_id} ${m.course_name_ja}`);
         }
-        results[m.module_id]={...s,_session_type:stype,_module:m};
-      }catch(e){
-        results[m.module_id]={_error:e.message,_session_type:stype,_module:m};
-        log(`⚠️ 失敗: ${m.module_id}`);
+      } catch(e) {
+        results[m.module_id] = {_error:e.message, _session_type:stype, _module:m};
+        log(`⚠️ 失敗: ${m.module_id} ${e.message}`);
       }
-      if(i<all.length-1) await new Promise(r=>setTimeout(r,300));
+
+      if (i < all.length - 1) await new Promise(r => setTimeout(r, 200));
     }
+
     setGeneratedSyllabi(results);
-    setProgress({done:all.length,total:all.length,current:"完了"});
+    setProgress({done:all.length, total:all.length, current:"完了"});
     setGenState("done");
-    log(`🎉 全${all.length}科目のシラバス生成完了`);
+    log(`🎉 完了 — 大学優先:${uniCount}科目 / AI生成:${aiCount}科目`);
   };
 
   const exportAll = () => {
