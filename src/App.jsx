@@ -97,7 +97,7 @@ ${fmtInstr}
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST", headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body: JSON.stringify({model:"claude-sonnet-4-20250514", max_tokens:2000, messages:[{role:"user",content:prompt}]})
+    body: JSON.stringify({model:"claude-haiku-4-5-20251001", max_tokens:2000, messages:[{role:"user",content:prompt}]})
   });
   const data = await res.json();
   const text = data.content?.map(c=>c.text||"").join("") || "{}";
@@ -358,7 +358,7 @@ function Step2Import({importedModules, setImportedModules, onComplete, log}) {
     const b64 = await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("読込失敗"));r.readAsDataURL(file);});
     const mt = ext==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     const res = await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,messages:[{role:"user",content:[
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:4000,messages:[{role:"user",content:[
         {type:"document",source:{type:"base64",media_type:mt,data:b64}},
         {type:"text",text:`このシラバスから全科目をJSON配列のみで抽出してください:\n[{"module_id":"","layer_id":"X","course_name_ja":"","module_name":"","recommended_year":1,"default_credits":2,"requirement":"","description":"","related_subjects":"","tags":""}]`}
       ]}]})});
