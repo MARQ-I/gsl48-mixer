@@ -1,9 +1,9 @@
 const PASSWORD = "slu2026";  function calcSimilarity(a, b) {   if (!a || !b) return 0;   const w1 = new Set(a.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   const w2 = new Set(b.toLowerCase().replace(/[^\w\s]/g,"").split(/\s+/).filter(w=>w.length>1));   let n = 0; w1.forEach(w=>{if(w2.has(w))n++;});   return n / Math.max(w1.size, w2.size, 1); }
 
 function PasswordGate({ children }) {
-  const [input, setInput] = React.useState("");
-  const [auth, setAuth] = React.useState(false);
-  const [error, setError] = React.useState(false);
+  const [input, setInput] = useState("");
+  const [auth, setAuth] = useState(false);
+  const [error, setError] = useState(false);
   if (auth) return children;
   return (
     <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f8fafc"}}>
