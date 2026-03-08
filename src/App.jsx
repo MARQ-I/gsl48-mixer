@@ -820,7 +820,7 @@ function Step3Mix({mixModules, setMixModules, gslModules, importedModules, gener
 }
 
 // ===================== MAIN APP =====================
-export default function SyllabusMixer() {
+function SyllabusMixer() {
   const [step, setStep] = useState(1); // 1 | 2 | 3
   const [diagResult, setDiagResult] = useState(null);
   const [importedModules, setImportedModules] = useState([]);
